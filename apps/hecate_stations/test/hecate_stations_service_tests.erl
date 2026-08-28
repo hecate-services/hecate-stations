@@ -58,11 +58,16 @@ info_version_matches_the_application_test() ->
 health_is_green_test() ->
     ?assertEqual(ok, ?SERVICE:health()).
 
-%% An empty list is the correct answer for a service that does nothing yet. The
-%% assertion is here so that adding a capability breaks a test and makes someone
-%% write down what the service can now actually do.
-announces_no_capability_yet_test() ->
-    ?assertEqual([], ?SERVICE:capabilities()).
+%% This service exists to answer exactly one RPC. An empty list would be
+%% the lie now; this pins the shape hecate_om_capabilities destructures
+%% (name, version, handler) so a typo in any of the three fails loudly
+%% here instead of as a mesh peer's confusing "no such procedure".
+announces_list_stations_capability_test() ->
+    [#{name := Name, version := Vsn, handler := {Mod, Args}}] = ?SERVICE:capabilities(),
+    ?assertEqual(<<"hecate_stations.list_stations">>, Name),
+    ?assertEqual(1, Vsn),
+    ?assertEqual(list_stations, Mod),
+    ?assertEqual([], Args).
 
 identity_spec_has_the_shape_hecate_om_expects_test() ->
     #{scope := Scope, actions := Actions,
@@ -72,22 +77,29 @@ identity_spec_has_the_shape_hecate_om_expects_test() ->
     ?assert(is_list(Resources)),
     ?assert(is_integer(Ttl) andalso Ttl > 0).
 
-%% A resource this service is not authorised for is a publish the realm would
-%% refuse once UCAN delegation lands. Asking for nothing and claiming nothing
-%% must stay in step, so the two are asserted together.
-authority_matches_what_is_announced_test() ->
+%% This service publishes and subscribes to no realm-scoped topics --
+%% node_record/station_endpoint ingestion reads the mesh-wide DHT (realm
+%% 0, protocol-internal), not anything this identity_spec governs. The
+%% one capability it serves is authorised by its own signing keypair
+%% (hecate_om_identity), not by realm-granted pubsub actions/resources.
+%% Asking for neither is still the honest answer, independently of
+%% announces_list_stations_capability_test/0 above.
+authority_asks_for_no_pubsub_topics_test() ->
     #{actions := Actions, resources := Resources} = ?SERVICE:identity_spec(),
-    ?assertEqual([], ?SERVICE:capabilities()),
     ?assertEqual([], Actions),
     ?assertEqual([], Resources).
 
-%% The supervisor starts and stops cleanly on its own, without hecate_om. It has
-%% no children as generated; this asserts the tree is startable, not that it does
-%% any work.
+%% The supervisor starts and stops cleanly on its own, without hecate_om.
+%% It supervises exactly one worker -- ingest_node_records, the
+%% snapshot-then-subscribe DHT consumer -- so this asserts the tree is
+%% startable AND that the one child it must have is actually wired in.
 supervisor_starts_and_stops_test() ->
     {ok, Pid} = hecate_stations_sup:start_link(),
     ?assert(is_process_alive(Pid)),
-    ?assertEqual([], supervisor:which_children(Pid)),
+    Children = supervisor:which_children(Pid),
+    ?assertEqual(1, length(Children)),
+    ?assertMatch([{ingest_node_records, ChildPid, worker, [ingest_node_records]}]
+                 when is_pid(ChildPid), Children),
     unlink(Pid),
     exit(Pid, shutdown).
 
