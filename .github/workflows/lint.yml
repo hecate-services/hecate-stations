@@ -1,6 +1,14 @@
 # Structural lint and unit tests. Runs on the glibc erlang image, where macula
-# resolves a prebuilt QUIC NIF and no Rust toolchain is needed. The alpine image
-# build forces a source build instead; see the Containerfile for why.
+# resolves a prebuilt QUIC NIF -- but macula_crypto_nif/macula_ucan_nif/
+# macula_did_nif/macula_mri_nif/macula_cbor_nif have no such fallback and
+# ALWAYS build from source (see macula's priv/build-nifs.sh): any test that
+# calls macula_record:sign/verify (this repo's ingest_node_records_tests, via
+# macula_cbor_nif's nif_pack_deterministic/1) needs a real Rust toolchain
+# here too, or it fails at runtime with nif_not_loaded, not at compile time --
+# `build_nif' only warns and skips when cargo is absent. Same toolchain
+# hecate-whiteboard's CI already installs for the identical reason. The
+# alpine image build forces a full source build for everything including
+# macula_quic; see the Containerfile for why.
 
 name: lint-and-test
 
@@ -36,6 +44,11 @@ jobs:
       # CI -- see hecate_om's own lint-and-test.yml for the earlier
       # incident this repeats. Install all four, not just the one that
       # happened to be exercised.
-      - run: apt-get update && apt-get install -y --no-install-recommends cmake build-essential libsnappy-dev liblz4-dev libzstd-dev libbz2-dev
+      - run: apt-get update && apt-get install -y --no-install-recommends cmake build-essential libsnappy-dev liblz4-dev libzstd-dev libbz2-dev curl
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - run: rebar3 lint
       - run: rebar3 eunit
