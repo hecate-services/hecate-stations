@@ -1,0 +1,17 @@
+{application, hecate_stations, [
+    {description, "Live, filterable directory of macula stations: geo, health, and direct-dial IP, so clients never hand-maintain a station list"},
+    {vsn, "0.1.0"},
+    {registered, [hecate_stations_sup]},
+    {mod, {hecate_stations_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        %% Mesh SDK, realm identity, capabilities, health.
+        hecate_om
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [{"GitHub", "https://github.com/hecate-services/hecate-stations"}]}
+]}.

@@ -1,0 +1,29 @@
+# Structural lint and unit tests. Runs on the glibc erlang image, where macula
+# resolves a prebuilt QUIC NIF and no Rust toolchain is needed. The alpine image
+# build forces a source build instead; see the Containerfile for why.
+
+name: lint-and-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      # ⚠ MUST MATCH THE `Containerfile' beside it. See the note there.
+      image: erlang:28
+    steps:
+      - uses: actions/checkout@v4
+      # cmake, build-essential: hecate_om pulls in rocksdb (via barrel_docdb)
+      # and khepri/ra transitively, UNCONDITIONALLY -- needed even for a
+      # storeless, producer-only service. libssl-dev is not listed because
+      # the debian-based erlang image already ships it; alpine (the
+      # Containerfile's runtime base) does not, which is why it's explicit
+      # there.
+      - run: apt-get update && apt-get install -y --no-install-recommends cmake build-essential
+      - run: rebar3 lint
+      - run: rebar3 eunit
