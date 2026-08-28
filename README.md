@@ -2,15 +2,19 @@
 
 **Live, filterable directory of macula stations: geo, health, and direct-dial IP, so clients never hand-maintain a station list**
 
-## Status: scaffold
+## Status: Phase 1 — serving list_stations
 
-The service boots, joins the mesh and answers `/health` on 8495. It
-does nothing else yet.
+The service boots, joins the mesh, and answers `/health` on 8495. It ingests
+`node_record`/`station_endpoint`/tombstone DHT records (signature-verified via
+`macula_record:verify/1`) into a `barrel_docdb` read model, and serves one RPC,
+`hecate_stations.list_stations` — filterable by `continent`/`country`/`city`, or
+`near => #{lat, lng, limit}` for nearest-first by great-circle distance — which
+it advertises at boot.
 
-It announces no capability and asks the realm for no authority, because it can do
-nothing yet. Both lists grow when the thing they name exists. Advertising a
-capability before it exists puts a lie on the mesh where another service can find
-it and call it.
+It still asks the realm for no authority beyond that: the one capability it
+serves is authorised by its own signing keypair (`hecate_om_identity`), not by
+realm-granted pubsub actions/resources, and `identity_spec/0`'s
+`actions`/`resources` stay empty on purpose.
 
 ## Running it
 
