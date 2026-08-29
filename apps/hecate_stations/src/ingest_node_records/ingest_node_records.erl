@@ -77,12 +77,23 @@ try_connect(_MeshHandles, State) ->
     State.
 
 ingest_node_record(Record) ->
-    verified_node_record(macula_record:verify(Record)).
+    verified_node_record(macula_record:verify(Record), Record).
 
-verified_node_record({ok, Record}) ->
+verified_node_record({ok, Record}, _Raw) ->
     Fields = macula_record:read_node_record(Record),
     station_read_model:upsert_node_record(Fields);
-verified_node_record({error, _Reason}) ->
+%% Logged at debug, not warning: `expired' here is routinely benign — this
+%% is a snapshot-then-subscribe read model (see moduledoc), so a record
+%% caught between a peer's refresh cycles is expected to show up expired
+%% at snapshot time and then arrive fresh via the subscription shortly
+%% after (announcer refreshes at 75% of a 10-min TTL, so worst case is one
+%% refresh interval, not a real gap). Logging nothing at all here is what
+%% turned exactly that transient race into an hour of live-REPL archaeology
+%% to explain, 2026-08-29 — this line is the fix for THAT, not for the race
+%% itself (there is no bug in the race).
+verified_node_record({error, Reason}, Raw) ->
+    logger:debug("[ingest_node_records] dropped node_record key=~s reason=~p",
+                 [short_hex(maps:get(key, Raw, undefined)), Reason]),
     ok.
 
 ingest_station_endpoint(Record) ->
@@ -91,8 +102,15 @@ ingest_station_endpoint(Record) ->
 verified_station_endpoint({ok, Record}, #{key := StationPubkey}) ->
     Fields = macula_record:read_station_endpoint(Record),
     station_read_model:upsert_station_endpoint(StationPubkey, Fields);
-verified_station_endpoint({error, _Reason}, _Record) ->
+verified_station_endpoint({error, Reason}, Raw) ->
+    logger:debug("[ingest_node_records] dropped station_endpoint key=~s reason=~p",
+                 [short_hex(maps:get(key, Raw, undefined)), Reason]),
     ok.
+
+short_hex(Key) when is_binary(Key), byte_size(Key) > 0 ->
+    binary:encode_hex(binary:part(Key, 0, min(8, byte_size(Key))));
+short_hex(_NotAKey) ->
+    <<"?">>.
 
 ingest_tombstone(Record) ->
     verified_tombstone(macula_record:verify(Record)).
