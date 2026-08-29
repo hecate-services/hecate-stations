@@ -62,7 +62,9 @@ station_read_model_test_() ->
         fun upsert_station_endpoint_merges_onto_existing_node_doc/1,
         fun upsert_node_record_merges_onto_existing_endpoint_doc/1,
         fun retire_node_removes_the_doc_from_fold/1,
-        fun retire_node_on_an_unseen_node_is_a_harmless_no_op/1
+        fun retire_node_on_an_unseen_node_is_a_harmless_no_op/1,
+        fun upsert_node_record_captures_version_when_present/1,
+        fun upsert_node_record_older_macula_with_no_version_key_does_not_crash/1
     ]}.
 
 upsert_node_record_creates_a_doc(_DbName) ->
@@ -92,6 +94,29 @@ upsert_node_record_derives_continent_from_country(_DbName) ->
         node_id => node_id(), country => <<"JP">>, capabilities => 0})),
     {ok, [Doc]} = station_read_model:fold(fun(D, Acc) -> {ok, [D | Acc]} end, []),
     ?_assertEqual(<<"Asia">>, maps:get(<<"continent">>, Doc)).
+
+%% `version' is new (macula 10.13.2's read_node_record/1) and
+%% intentionally absent from `node_fields/1''s defaults -- see that
+%% helper's own comment on why (mirrors this repo's own macula dep,
+%% not yet bumped past the version that added it). Passed as an
+%% explicit override here, the same way a caller ALREADY on 10.13.2+
+%% would actually supply it.
+upsert_node_record_captures_version_when_present(_DbName) ->
+    ok = station_read_model:upsert_node_record(node_fields(#{
+        node_id => node_id(), capabilities => 0, version => <<"a1b2c3d">>})),
+    {ok, [Doc]} = station_read_model:fold(fun(D, Acc) -> {ok, [D | Acc]} end, []),
+    ?_assertEqual(<<"a1b2c3d">>, maps:get(<<"version">>, Doc)).
+
+%% The actual regression this guards: `node_fields/1' (unchanged,
+%% matching this repo's CURRENT real caller) has no `version' key at
+%% all -- proves the 3-arity `maps:get' in upsert_node_record/1 doesn't
+%% crash on that gap, and the field is correctly omitted rather than
+%% written as `undefined'.
+upsert_node_record_older_macula_with_no_version_key_does_not_crash(_DbName) ->
+    ok = station_read_model:upsert_node_record(node_fields(#{
+        node_id => node_id(), capabilities => 0})),
+    {ok, [Doc]} = station_read_model:fold(fun(D, Acc) -> {ok, [D | Acc]} end, []),
+    ?_assertNot(maps:is_key(<<"version">>, Doc)).
 
 %% A station's node_record and station_endpoint arrive independently and
 %% in either order -- this is the case the plan's own design calls out.

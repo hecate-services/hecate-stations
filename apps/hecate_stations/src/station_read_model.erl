@@ -22,7 +22,19 @@ upsert_node_record(#{node_id := NodeId} = Fields) when is_binary(NodeId) ->
     Doc7 = maybe_put(Doc6, <<"lng">>, maps:get(lng, Fields)),
     Doc8 = maybe_put(Doc7, <<"capabilities">>, maps:get(capabilities, Fields)),
     Doc9 = maybe_put(Doc8, <<"kind">>, maps:get(kind, Fields)),
-    put(Doc9);
+    %% 3-arity `maps:get' deliberately, unlike its siblings above: `version'
+    %% is new to `read_node_record/1' as of macula 10.13.2, and this repo's
+    %% OWN macula dependency has not been bumped past that yet as of this
+    %% commit -- `Fields' from the currently-resolved macula simply has no
+    %% `version' key at all, and the 2-arity form every other field here
+    %% uses would crash with `{badkey, version}' on the very first inbound
+    %% node_record. Safe to drop back to 2-arity once this repo's own
+    %% macula dep is confirmed >= 10.13.2. Also: populated only once
+    %% macula-station's own heartbeat is publishing something real (see
+    %% both repos' CHANGELOGs) -- an older station's `version' is simply
+    %% absent here, not a stale/wrong value, since `maybe_put' omits it.
+    Doc10 = maybe_put(Doc9, <<"version">>, maps:get(version, Fields, undefined)),
+    put(Doc10);
 upsert_node_record(_Fields) ->
     ok.
 
