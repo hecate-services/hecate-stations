@@ -5,6 +5,18 @@
 [
     {hecate_om, [
         {service_cert_path, "/etc/hecate/secrets/service-cert.pem"},
+        %% Without this, hecate_om_identity:load_keypair/0 returns `undefined`
+        %% forever (self-heal only fires when a path IS set but the file at
+        %% it fails to load) -- keypair/0 stays {error, no_keypair}, and
+        %% hecate_om_capabilities:advertise_with/7 silently no-ops on every
+        %% republish tick ("an ephemeral service cannot sign and is
+        %% correctly not advertised", by design). Confirmed live 2026-08-31:
+        %% this was the actual reason hecate_stations.list_stations never
+        %% reached the DHT, not a mesh/realm problem. /etc/hecate/secrets is
+        %% already the one volume this container has mounted (see
+        %% service_cert_path above) -- no new infrastructure needed, just
+        %% this missing key.
+        {identity_key_path, "/etc/hecate/secrets/identity.key"},
         {station_socket,    "/run/macula/station.sock"},
         {health_port,       ${HECATE_HEALTH_PORT}},
         {capability_topic,  <<"_mesh.cap.">>},
