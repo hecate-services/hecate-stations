@@ -8,7 +8,7 @@
 %% write side these fields came from.
 -module(station_read_model).
 
--export([upsert_node_record/1, upsert_station_endpoint/2, retire_node/1, fold/2]).
+-export([upsert_node_record/1, upsert_station_endpoint/2, retire_node/1, fold/2, to_wire/1]).
 
 upsert_node_record(#{node_id := NodeId} = Fields) when is_binary(NodeId) ->
     Id = node_id_hex(NodeId),
@@ -69,6 +69,34 @@ deleted({error, not_found}) -> ok.
 fold(Fun, Acc) ->
     {ok, DbName} = hecate_om:read_model(),
     barrel_docdb:fold_docs(DbName, Fun, Acc).
+
+%% @doc A station doc shaped for the list_stations reply: the text fields
+%% (hostname, city, country, continent, kind, version, and each
+%% host_advertised entry) tagged `{text, Bin}', every other field as
+%% stored.
+%%
+%% macula encodes a bare binary as a CBOR byte string and `{text, Bin}' as
+%% a CBOR text string, so untagged text reaches non-BEAM callers
+%% (macula-mcp, macula-cli, the SDKs) as bytes. `id', `node_id' and `_rev'
+%% are identifiers and stay bytes; numbers are unaffected.
+-spec to_wire(map()) -> map().
+to_wire(Doc) ->
+    maps:map(fun wire_value/2, Doc).
+
+wire_value(<<"host_advertised">>, Hosts) when is_list(Hosts) ->
+    [text(Host) || Host <- Hosts];
+wire_value(Key, Value) ->
+    text_if(is_text_field(Key), Value).
+
+is_text_field(Key) ->
+    lists:member(Key, [<<"hostname">>, <<"city">>, <<"country">>, <<"continent">>,
+                       <<"kind">>, <<"version">>]).
+
+text_if(true, Value) -> text(Value);
+text_if(false, Value) -> Value.
+
+text(Bin) when is_binary(Bin) -> {text, Bin};
+text(Other) -> Other.
 
 existing_or_new(Id, NodeId) ->
     {ok, DbName} = hecate_om:read_model(),

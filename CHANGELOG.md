@@ -21,3 +21,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - CI: `lint-and-test` on every push and pull request, `build-and-push` to
   the registry on `main` and on `v*` tags, publishing both `:latest` and the semver
   tag.
+
+### Fixed
+
+- `hecate_stations.list_stations` sends `hostname`, `city`, `country`,
+  `continent`, `kind`, `version` and each `host_advertised` entry as CBOR
+  text (`{text, Bin}`, via `station_read_model:to_wire/1`) instead of byte
+  strings, so non-BEAM callers (macula-mcp, macula-cli, the SDKs) get
+  strings. `id`, `node_id` and `_rev` stay bytes. The station discovery in
+  the Erlang, Go, Rust and .NET SDKs reads a host as either text or bytes,
+  and macula-mcp's hex decoding passes text through, so none of them needs
+  a change first. (hecate-stations#1)

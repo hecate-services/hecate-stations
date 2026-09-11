@@ -17,9 +17,12 @@
 
 init(_Args) -> {ok, undefined}.
 
+%% Filters and sorting run on the stored docs; only the rows that go out
+%% are shaped for the wire (station_read_model:to_wire/1).
 handle_request(Payload, State) ->
     {ok, Rows} = station_read_model:fold(fun(Doc, Acc) -> {ok, [Doc | Acc]} end, []),
-    {reply, #{stations => apply_filters(Payload, Rows)}, State}.
+    Stations = [station_read_model:to_wire(Row) || Row <- apply_filters(Payload, Rows)],
+    {reply, #{stations => Stations}, State}.
 
 apply_filters(Payload, Rows) ->
     R1 = filter_eq(Rows, <<"continent">>, maps:get(continent, Payload, undefined)),

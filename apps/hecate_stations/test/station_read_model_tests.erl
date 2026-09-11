@@ -155,3 +155,30 @@ retire_node_on_an_unseen_node_is_a_harmless_no_op(_DbName) ->
     ok = station_read_model:retire_node(node_id()),
     {ok, Rows} = station_read_model:fold(fun(D, Acc) -> {ok, [D | Acc]} end, []),
     ?_assertEqual([], Rows).
+
+%% to_wire/1 needs no database: it only reshapes a doc for the
+%% list_stations reply. Text fields and host_advertised entries become
+%% `{text, Bin}'; ids, the revision and numbers pass through untouched.
+to_wire_tags_text_fields_and_leaves_ids_and_numbers_test() ->
+    NodeId = node_id(),
+    Doc = #{<<"id">> => binary:encode_hex(NodeId, lowercase), <<"node_id">> => NodeId,
+            <<"_rev">> => <<"2-abc">>, <<"hostname">> => <<"station-de-falkenstein.macula.io">>,
+            <<"city">> => <<"Falkenstein">>, <<"country">> => <<"DE">>,
+            <<"continent">> => <<"Europe">>, <<"kind">> => <<"station">>,
+            <<"version">> => <<"a1b2c3d">>, <<"lat">> => 50.4779, <<"lng">> => 12.3713,
+            <<"capabilities">> => 0, <<"quic_port">> => 4433,
+            <<"host_advertised">> => [<<"2a01:4f8::1">>, <<"5.6.7.8">>],
+            <<"last_node_record_at">> => 1788355047886, <<"last_endpoint_at">> => 1788355047999},
+    ?assertEqual(Doc#{<<"hostname">> => {text, <<"station-de-falkenstein.macula.io">>},
+                      <<"city">> => {text, <<"Falkenstein">>},
+                      <<"country">> => {text, <<"DE">>},
+                      <<"continent">> => {text, <<"Europe">>},
+                      <<"kind">> => {text, <<"station">>},
+                      <<"version">> => {text, <<"a1b2c3d">>},
+                      <<"host_advertised">> => [{text, <<"2a01:4f8::1">>}, {text, <<"5.6.7.8">>}]},
+                 station_read_model:to_wire(Doc)).
+
+to_wire_leaves_a_doc_without_text_fields_unchanged_test() ->
+    Doc = #{<<"id">> => <<"ab">>, <<"node_id">> => node_id(), <<"quic_port">> => 4433,
+            <<"host_advertised">> => []},
+    ?assertEqual(Doc, station_read_model:to_wire(Doc)).

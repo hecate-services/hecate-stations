@@ -65,7 +65,12 @@ fields(Overrides) ->
     },
     maps:merge(Base, maps:remove(continent_override, Overrides)).
 
-cities(Rows) -> lists:sort([maps:get(<<"city">>, R, undefined) || R <- Rows]).
+%% Reply rows carry `city' as `{text, Bin}' (station_read_model:to_wire/1);
+%% a row whose city went out as bare bytes counts as having none.
+cities(Rows) -> lists:sort([city(R) || R <- Rows]).
+
+city(#{<<"city">> := {text, City}}) -> City;
+city(_Row) -> undefined.
 
 list_stations_test_() ->
     {foreach, fun setup/0, fun teardown/1, [
@@ -74,7 +79,8 @@ list_stations_test_() ->
         fun country_filter/1,
         fun city_filter/1,
         fun near_sorts_nearest_first_and_excludes_geo_less_stations/1,
-        fun near_respects_limit/1
+        fun near_respects_limit/1,
+        fun reply_sends_text_as_text_and_node_id_as_bytes/1
     ]}.
 
 no_filter_returns_every_station(_DbName) ->
@@ -103,9 +109,19 @@ near_sorts_nearest_first_and_excludes_geo_less_stations(_DbName) ->
     {reply, #{stations := Rows}, _} = list_stations:handle_request(
         #{near => #{lat => 50.8798, lng => 4.7005}}, undefined),
     [?_assertEqual(4, length(Rows)),
-     ?_assertEqual(<<"Tokyo">>, maps:get(<<"city">>, lists:last(Rows)))].
+     ?_assertEqual(<<"Tokyo">>, city(lists:last(Rows)))].
 
 near_respects_limit(_DbName) ->
     {reply, #{stations := Rows}, _} = list_stations:handle_request(
         #{near => #{lat => 50.8798, lng => 4.7005, limit => 2}}, undefined),
     ?_assertEqual(2, length(Rows)).
+
+%% Non-BEAM callers read these fields; bare binaries reach them as bytes.
+reply_sends_text_as_text_and_node_id_as_bytes(_DbName) ->
+    {reply, #{stations := [Row]}, _} =
+        list_stations:handle_request(#{country => <<"DE">>}, undefined),
+    NodeId = maps:get(<<"node_id">>, Row),
+    [?_assertEqual({text, <<"DE">>}, maps:get(<<"country">>, Row)),
+     ?_assertEqual({text, <<"Europe">>}, maps:get(<<"continent">>, Row)),
+     ?_assert(is_binary(NodeId) andalso byte_size(NodeId) =:= 32),
+     ?_assertEqual(50.4779, maps:get(<<"lat">>, Row))].
